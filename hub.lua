@@ -793,6 +793,107 @@ Connect(UnloadButton.MouseLeave, function()
     }):Play()
 end)
 
+-- INSTA KILL UI (cliente) - envia pedido ao servidor via RemoteEvent
+-- Observação: isto É um pedido ao servidor; o servidor deve validar permissões e executar a ação.
+do
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local EVENT_NAME = "AxionInstaKillEvent"
+
+    -- Caixa de texto para inserir nome ou UserId do alvo
+    local InstaKillBox = Instance.new("TextBox")
+    InstaKillBox.Size = UDim2.new(0, 160, 0, 30)
+    InstaKillBox.Position = UDim2.new(0, 0, 0, 130)
+    InstaKillBox.BackgroundColor3 = CurrentTheme.ButtonColor
+    InstaKillBox.TextColor3 = CurrentTheme.TextColor
+    InstaKillBox.Text = "Nome do jogador ou UserId"
+    InstaKillBox.Font = Enum.Font.Gotham
+    InstaKillBox.TextSize = 16
+    InstaKillBox.BorderSizePixel = 0
+    InstaKillBox.ZIndex = 3
+    InstaKillBox.Parent = MiscPage
+
+    local instaCorner = Instance.new("UICorner")
+    instaCorner.CornerRadius = UDim.new(0, 6)
+    instaCorner.Parent = InstaKillBox
+
+    -- Botão que envia o pedido ao servidor
+    local InstaKillButton = Instance.new("TextButton")
+    InstaKillButton.Size = UDim2.new(0, 160, 0, 30)
+    InstaKillButton.Position = UDim2.new(0, 170, 0, 130)
+    InstaKillButton.BackgroundColor3 = CurrentTheme.UnloadColor
+    InstaKillButton.TextColor3 = CurrentTheme.TextColor
+    InstaKillButton.Text = "Insta Kill (request)"
+    InstaKillButton.Font = Enum.Font.Gotham
+    InstaKillButton.TextSize = 16
+    InstaKillButton.BorderSizePixel = 0
+    InstaKillButton.ZIndex = 3
+    InstaKillButton.Parent = MiscPage
+
+    local instaBtnCorner = Instance.new("UICorner")
+    instaBtnCorner.CornerRadius = UDim.new(0, 6)
+    instaBtnCorner.Parent = InstaKillButton
+
+    Connect(InstaKillButton.MouseEnter, function()
+        TweenService:Create(InstaKillButton, TweenInfo.new(0.15), {
+            BackgroundColor3 = CurrentTheme.UnloadColor:Lerp(Color3.fromRGB(180, 0, 0), 0.2)
+        }):Play()
+        PlaySound("Hover")
+    end)
+
+    Connect(InstaKillButton.MouseLeave, function()
+        TweenService:Create(InstaKillButton, TweenInfo.new(0.15), {
+            BackgroundColor3 = CurrentTheme.UnloadColor
+        }):Play()
+    end)
+
+    -- Gestão do RemoteEvent no cliente: tenta encontrar o evento e liga um handler de resposta.
+    local InstaEvent = ReplicatedStorage:FindFirstChild(EVENT_NAME)
+    if InstaEvent and InstaEvent:IsA("RemoteEvent") then
+        InstaEvent.OnClientEvent:Connect(function(ok, msg)
+            if ok then
+                Notify("Sucesso: " .. tostring(msg), 2)
+            else
+                Notify("Erro: " .. tostring(msg), 2)
+            end
+        end)
+    end
+
+    -- Se o RemoteEvent for criado depois, liga o handler quando aparecer
+    Connect(ReplicatedStorage.ChildAdded, function(child)
+        if child and child.Name == EVENT_NAME and child:IsA("RemoteEvent") then
+            InstaEvent = child
+            InstaEvent.OnClientEvent:Connect(function(ok, msg)
+                if ok then
+                    Notify("Sucesso: " .. tostring(msg), 2)
+                else
+                    Notify("Erro: " .. tostring(msg), 2)
+                end
+            end)
+        end
+    end)
+
+    Connect(InstaKillButton.MouseButton1Click, function()
+        PlaySound("Click")
+        local ev = ReplicatedStorage:FindFirstChild(EVENT_NAME)
+        if not ev or not ev:IsA("RemoteEvent") then
+            Notify("Erro: AxionInstaKillEvent não encontrado no servidor.", 2)
+            return
+        end
+
+        local inputText = InstaKillBox.Text and InstaKillBox.Text:match("%S+") or ""
+        if inputText == "" then
+            Notify("Informe um nome ou UserId do jogador.", 2)
+            return
+        end
+
+        local asNumber = tonumber(inputText)
+        local payload = asNumber or inputText
+
+        -- Envia o pedido ao servidor (o servidor deve validar permissões!)
+        ev:FireServer(payload)
+    end)
+end
+
 ---------------------------------------------------------------------
 -- ABOUT TAB CONTENT
 ---------------------------------------------------------------------

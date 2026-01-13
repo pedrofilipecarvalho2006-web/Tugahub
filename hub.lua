@@ -51,6 +51,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -796,7 +797,6 @@ end)
 -- INSTA KILL UI (cliente) - envia pedido ao servidor via RemoteEvent
 -- Observação: isto É um pedido ao servidor; o servidor deve validar permissões e executar a ação.
 do
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local EVENT_NAME = "AxionInstaKillEvent"
 
     -- Caixa de texto para inserir nome ou UserId do alvo
@@ -891,6 +891,123 @@ do
 
         -- Envia o pedido ao servidor (o servidor deve validar permissões!)
         ev:FireServer(payload)
+    end)
+end
+
+-- INSTA KILL TOOL (cliente) - cria uma Tool que, ao tocar outro jogador, envia pedido ao servidor
+-- IMPORTANTE: isto NÃO mata o alvo localmente — apenas envia o UserId do alvo ao RemoteEvent.
+do
+    local EVENT_NAME = "AxionInstaKillEvent"
+    local TOOL_NAME = "Classic Slap" -- nome visível da Tool que o jogador recebe
+    local TOOL_HANDLE_SIZE = Vector3.new(1,1,1)
+    local HIT_DEBOUNCE = 0.5 -- segundos por alvo para evitar spam
+
+    -- cria Tool (apenas cliente) e coloca no Backpack para facilitar testes
+    local function createLocalTool()
+        local backpack = LocalPlayer:FindFirstChild("Backpack") or LocalPlayer:WaitForChild("Backpack")
+        if not backpack then return end
+
+        -- Se já existir, replace/retorna
+        if backpack:FindFirstChild(TOOL_NAME) then
+            return
+        end
+
+        local tool = Instance.new("Tool")
+        tool.Name = TOOL_NAME
+        tool.RequiresHandle = true
+        tool.CanBeDropped = true
+
+        local handle = Instance.new("Part")
+        handle.Name = "Handle"
+        handle.Size = TOOL_HANDLE_SIZE
+        handle.Transparency = 1
+        handle.CanCollide = false
+        handle.Massless = true
+        handle.Parent = tool
+
+        tool.Parent = backpack
+
+        -- feedback visual opcional: tooltip no equip
+        tool.Equipped:Connect(function()
+            Notify("Tool equipada: " .. TOOL_NAME, 1.5)
+        end)
+    end
+
+    -- Tenta criar a Tool no Backpack (se já existir, ignora)
+    createLocalTool()
+
+    -- set up touched listener (vai ligar ao Handle de todas as Tools com este nome no personagem/backpack)
+    local hitTimestamps = {} -- [userId] = lastHitTick
+
+    local function onHandleTouched(hit, attackerPlayer)
+        if not hit or not attackerPlayer then return end
+        local targetChar = hit:FindFirstAncestorOfClass("Model")
+        if not targetChar then return end
+        local targetPlayer = Players:GetPlayerFromCharacter(targetChar)
+        if not targetPlayer then return end
+        if targetPlayer == attackerPlayer then return end
+
+        local uid = targetPlayer.UserId
+        local now = tick()
+        if hitTimestamps[uid] and now - hitTimestamps[uid] < HIT_DEBOUNCE then
+            return
+        end
+        hitTimestamps[uid] = now
+
+        -- procura o RemoteEvent (espera curto tempo se necessário)
+        local ev = ReplicatedStorage:FindFirstChild(EVENT_NAME) or ReplicatedStorage:WaitForChild(EVENT_NAME, 5)
+        if not ev or not ev:IsA("RemoteEvent") then
+            Notify("Erro: AxionInstaKillEvent não encontrado no servidor.", 2)
+            return
+        end
+
+        -- envia pedido ao servidor: usar UserId é mais confiável
+        ev:FireServer(uid)
+        -- feedback ao atacante
+        Notify("Pedido de insta-kill enviado para: " .. targetPlayer.Name, 2)
+    end
+
+    -- Liga a deteção a tools equipadas no character (quando equipado).
+    -- Observa quando o jogador equipa a Tool criada por nós (ou outra com mesmo nome).
+    local function onCharacterAdded(char)
+        -- observa Tools presentes no character
+        for _, child in ipairs(char:GetChildren()) do
+            if child:IsA("Tool") and child.Name == TOOL_NAME then
+                local handle = child:FindFirstChild("Handle")
+                if handle and handle:IsA("BasePart") then
+                    -- conexão Touched
+                    Connect(handle.Touched, function(hit)
+                        onHandleTouched(hit, LocalPlayer)
+                    end)
+                end
+            end
+        end
+
+        -- se uma Tool for adicionada futuramente ao character
+        char.ChildAdded:Connect(function(child)
+            if child:IsA("Tool") and child.Name == TOOL_NAME then
+                local handle = child:FindFirstChild("Handle")
+                if handle and handle:IsA("BasePart") then
+                    Connect(handle.Touched, function(hit)
+                        onHandleTouched(hit, LocalPlayer)
+                    end)
+                end
+            end
+        end)
+    end
+
+    -- liga listeners
+    if LocalPlayer.Character then
+        onCharacterAdded(LocalPlayer.Character)
+    end
+    Connect(LocalPlayer.CharacterAdded, onCharacterAdded)
+
+    -- Também observa o Backpack para ligar ferramentas que forem manipuladas diretamente do Backpack (opcional)
+    local backpack = LocalPlayer:FindFirstChild("Backpack") or LocalPlayer:WaitForChild("Backpack")
+    backpack.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") and child.Name == TOOL_NAME then
+            -- nada extra necessário aqui; quando for equipado, o Character logic tratará
+        end
     end)
 end
 

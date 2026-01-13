@@ -1,4 +1,4 @@
---// Axion V1 Rewrite | Hub (Developer Fly)
+--// Axion V1 Rewrite | Hub (Developer Fly + WalkSpeed + Godmode)
 --// Autor: Pedro (versão PRO)
 
 ---------------------------------------------------------------------
@@ -9,6 +9,10 @@ local Config = {
     DefaultFlySpeed = 60,
     MinSpeed = 10,
     MaxSpeed = 200,
+
+    DefaultWalkSpeed = 16,
+    MinWalkSpeed = 5,
+    MaxWalkSpeed = 80,
 
     FlyKey = Enum.KeyCode.F,
     DefaultToggleMenuKey = Enum.KeyCode.End,
@@ -70,12 +74,14 @@ end
 
 SaveEnv.Axion_Config = SaveEnv.Axion_Config or {
     FlySpeed = Config.DefaultFlySpeed,
+    WalkSpeed = Config.DefaultWalkSpeed,
     Theme = Config.DefaultTheme,
     ToggleMenuKey = Config.DefaultToggleMenuKey,
 }
 
 local State = {
     FlySpeed = SaveEnv.Axion_Config.FlySpeed or Config.DefaultFlySpeed,
+    WalkSpeed = SaveEnv.Axion_Config.WalkSpeed or Config.DefaultWalkSpeed,
     CurrentThemeName = SaveEnv.Axion_Config.Theme or Config.DefaultTheme,
     ToggleMenuKey = SaveEnv.Axion_Config.ToggleMenuKey or Config.DefaultToggleMenuKey,
 }
@@ -98,6 +104,11 @@ local SpeedSliderDrag
 local SpeedValueLabel
 local ThemeToggleButton
 local MinimizeButton
+
+local WalkSpeedSliderBar
+local WalkSpeedSliderFill
+local WalkSpeedSliderDrag
+local WalkSpeedValueLabel
 
 local MainTabButton
 local SettingsTabButton
@@ -128,9 +139,13 @@ local Connections = {}
 local DefaultMainPos
 
 local Sliding = false
+local SlidingWalk = false
 
 -- sons UI
 local UISounds = {}
+
+-- godmode
+local GodmodeEnabled = false
 
 ---------------------------------------------------------------------
 -- UTILS
@@ -143,6 +158,7 @@ end
 
 local function Cleanup()
     Flying = false
+    GodmodeEnabled = false
 
     if BodyVel then BodyVel:Destroy() end
     if BodyGyro then BodyGyro:Destroy() end
@@ -171,6 +187,7 @@ end
 local function SaveSettings()
     SaveEnv.Axion_Config = SaveEnv.Axion_Config or {}
     SaveEnv.Axion_Config.FlySpeed = State.FlySpeed
+    SaveEnv.Axion_Config.WalkSpeed = State.WalkSpeed
     SaveEnv.Axion_Config.Theme = State.CurrentThemeName
     SaveEnv.Axion_Config.ToggleMenuKey = State.ToggleMenuKey
 end
@@ -183,6 +200,12 @@ local function SetNoclip(state)
             part.CanTouch = not state
             part.CanQuery = not state
         end
+    end
+end
+
+local function ApplyWalkSpeed()
+    if Humanoid then
+        Humanoid.WalkSpeed = State.WalkSpeed
     end
 end
 
@@ -200,6 +223,7 @@ local function AttachCharacter(char)
     BodyGyro = Instance.new("BodyGyro")
     BodyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
 
+    ApplyWalkSpeed()
     SetNoclip(Flying)
 end
 
@@ -274,22 +298,20 @@ local function ApplyTheme()
     if not Gui then return end
     local theme = CurrentTheme
 
-    -- Main frame
     if MainFrame then
         MainFrame.BackgroundColor3 = theme.BgColor
     end
 
-    -- Percorrer todos os descendants e aplicar onde fizer sentido
     for _, obj in ipairs(Gui:GetDescendants()) do
         if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-            if obj ~= SpeedValueLabel then
+            if obj ~= SpeedValueLabel and obj ~= WalkSpeedValueLabel then
                 obj.TextColor3 = theme.TextColor
             end
         end
         if obj:IsA("Frame") then
-            if obj.Name == "SpeedSliderBar" then
+            if obj.Name == "SpeedSliderBar" or obj.Name == "WalkSpeedSliderBar" then
                 obj.BackgroundColor3 = theme.SliderBarColor
-            elseif obj.Name == "SpeedSliderFill" then
+            elseif obj.Name == "SpeedSliderFill" or obj.Name == "WalkSpeedSliderFill" then
                 obj.BackgroundColor3 = theme.SliderFillColor
             end
         end
@@ -306,6 +328,12 @@ local function ApplyTheme()
     end
     if SpeedSliderFill then
         SpeedSliderFill.BackgroundColor3 = theme.SliderFillColor
+    end
+    if WalkSpeedSliderBar then
+        WalkSpeedSliderBar.BackgroundColor3 = theme.SliderBarColor
+    end
+    if WalkSpeedSliderFill then
+        WalkSpeedSliderFill.BackgroundColor3 = theme.SliderFillColor
     end
 end
 
@@ -552,10 +580,10 @@ local function SetTabVisual(tabName)
     end
 end
 
-MainTabButton = CreateTabButton("Main", "rbxassetid://7072718362")       -- icon player
-SettingsTabButton = CreateTabButton("Settings", "rbxassetid://7072721390") -- icon gear
-MiscTabButton   = CreateTabButton("Misc", "rbxassetid://7072719938")      -- icon misc
-AboutTabButton  = CreateTabButton("About", "rbxassetid://7072721430")     -- icon info
+MainTabButton = CreateTabButton("Main", "rbxassetid://7072718362")
+SettingsTabButton = CreateTabButton("Settings", "rbxassetid://7072721390")
+MiscTabButton   = CreateTabButton("Misc", "rbxassetid://7072719938")
+AboutTabButton  = CreateTabButton("About", "rbxassetid://7072721430")
 SetTabVisual("Main")
 
 ---------------------------------------------------------------------
@@ -685,10 +713,72 @@ SpeedValueLabel.TextXAlignment = Enum.TextXAlignment.Left
 SpeedValueLabel.ZIndex = 2
 SpeedValueLabel.Parent = SettingsPage
 
+-- WalkSpeed
+local WalkSpeedLabel = Instance.new("TextLabel")
+WalkSpeedLabel.Size = UDim2.new(1, 0, 0, 25)
+WalkSpeedLabel.Position = UDim2.new(0, 0, 0, 70)
+WalkSpeedLabel.BackgroundTransparency = 1
+WalkSpeedLabel.Text = "Walk Speed"
+WalkSpeedLabel.TextColor3 = CurrentTheme.SecondaryTextColor
+WalkSpeedLabel.Font = Enum.Font.GothamSemibold
+WalkSpeedLabel.TextSize = 20
+WalkSpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+WalkSpeedLabel.ZIndex = 2
+WalkSpeedLabel.Parent = SettingsPage
+
+WalkSpeedSliderBar = Instance.new("Frame")
+WalkSpeedSliderBar.Name = "WalkSpeedSliderBar"
+WalkSpeedSliderBar.Size = UDim2.new(0, 260, 0, 8)
+WalkSpeedSliderBar.Position = UDim2.new(0, 0, 0, 110)
+WalkSpeedSliderBar.BackgroundColor3 = CurrentTheme.SliderBarColor
+WalkSpeedSliderBar.BorderSizePixel = 0
+WalkSpeedSliderBar.ZIndex = 2
+WalkSpeedSliderBar.Parent = SettingsPage
+
+local wsSliderCorner = Instance.new("UICorner")
+wsSliderCorner.CornerRadius = UDim.new(0, 4)
+wsSliderCorner.Parent = WalkSpeedSliderBar
+
+WalkSpeedSliderFill = Instance.new("Frame")
+WalkSpeedSliderFill.Name = "WalkSpeedSliderFill"
+WalkSpeedSliderFill.Size = UDim2.new(0, 0, 1, 0)
+WalkSpeedSliderFill.Position = UDim2.new(0, 0, 0, 0)
+WalkSpeedSliderFill.BackgroundColor3 = CurrentTheme.SliderFillColor
+WalkSpeedSliderFill.BorderSizePixel = 0
+WalkSpeedSliderFill.ZIndex = 3
+WalkSpeedSliderFill.Parent = WalkSpeedSliderBar
+
+local wsFillCorner = Instance.new("UICorner")
+wsFillCorner.CornerRadius = UDim.new(0, 4)
+wsFillCorner.Parent = WalkSpeedSliderFill
+
+WalkSpeedSliderDrag = Instance.new("Frame")
+WalkSpeedSliderDrag.Size = UDim2.new(0, 12, 0, 18)
+WalkSpeedSliderDrag.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
+WalkSpeedSliderDrag.BorderSizePixel = 0
+WalkSpeedSliderDrag.ZIndex = 4
+WalkSpeedSliderDrag.Parent = WalkSpeedSliderBar
+
+local wsDragCorner = Instance.new("UICorner")
+wsDragCorner.CornerRadius = UDim.new(1, 0)
+wsDragCorner.Parent = WalkSpeedSliderDrag
+
+WalkSpeedValueLabel = Instance.new("TextLabel")
+WalkSpeedValueLabel.Size = UDim2.new(0, 80, 0, 20)
+WalkSpeedValueLabel.Position = UDim2.new(0, 270, 0, 102)
+WalkSpeedValueLabel.BackgroundTransparency = 1
+WalkSpeedValueLabel.Text = tostring(State.WalkSpeed)
+WalkSpeedValueLabel.TextColor3 = CurrentTheme.TextColor
+WalkSpeedValueLabel.Font = Enum.Font.Gotham
+WalkSpeedValueLabel.TextSize = 16
+WalkSpeedValueLabel.TextXAlignment = Enum.TextXAlignment.Left
+WalkSpeedValueLabel.ZIndex = 2
+WalkSpeedValueLabel.Parent = SettingsPage
+
 -- Tema
 ThemeToggleButton = Instance.new("TextButton")
 ThemeToggleButton.Size = UDim2.new(0, 160, 0, 30)
-ThemeToggleButton.Position = UDim2.new(0, 0, 0, 80)
+ThemeToggleButton.Position = UDim2.new(0, 0, 0, 150)
 ThemeToggleButton.BackgroundColor3 = CurrentTheme.ButtonColor
 ThemeToggleButton.TextColor3 = CurrentTheme.TextColor
 ThemeToggleButton.Text = "Theme: " .. State.CurrentThemeName
@@ -794,6 +884,35 @@ Connect(UnloadButton.MouseLeave, function()
     }):Play()
 end)
 
+-- GODMODE BUTTON
+local GodButton = Instance.new("TextButton")
+GodButton.Size = UDim2.new(0, 160, 0, 40)
+GodButton.Position = UDim2.new(0, 0, 0, 130)
+GodButton.BackgroundColor3 = CurrentTheme.ButtonColor
+GodButton.TextColor3 = CurrentTheme.TextColor
+GodButton.Text = "Godmode (HP)"
+GodButton.Font = Enum.Font.Gotham
+GodButton.TextSize = 18
+GodButton.BorderSizePixel = 0
+GodButton.ZIndex = 2
+GodButton.Parent = MiscPage
+
+local godCorner = Instance.new("UICorner")
+godCorner.CornerRadius = UDim.new(0, 6)
+godCorner.Parent = GodButton
+
+Connect(GodButton.MouseButton1Click, function()
+    GodmodeEnabled = not GodmodeEnabled
+    PlaySound("Click")
+
+    if GodmodeEnabled then
+        GodButton.BackgroundColor3 = CurrentTheme.ButtonColorActive
+        Notify("Godmode ativado (HP infinito)", 2)
+    else
+        GodButton.BackgroundColor3 = CurrentTheme.ButtonColor
+        Notify("Godmode desativado", 2)
+    end
+end)
 
 ---------------------------------------------------------------------
 -- ABOUT TAB CONTENT
@@ -822,7 +941,7 @@ local AboutText = Instance.new("TextLabel")
 AboutText.Size = UDim2.new(1, -10, 0, 120)
 AboutText.Position = UDim2.new(0, 0, 0, 35)
 AboutText.BackgroundTransparency = 1
-AboutText.Text = "Axion V1 Rewrite | Hub\nDeveloper: Pedro\nVersion: 1.0.0 PRO\n\nFly, UI animada, keybinds, temas e mais."
+AboutText.Text = "Axion V1 Rewrite | Hub\nDeveloper: Pedro\nVersion: 1.0.0 PRO\n\nFly, WalkSpeed, Godmode, UI animada, keybinds, temas e mais."
 AboutText.TextColor3 = CurrentTheme.TextColor
 AboutText.Font = Enum.Font.Gotham
 AboutText.TextSize = 14
@@ -980,7 +1099,7 @@ end
 Connect(FlyButton.MouseButton1Click, ToggleFly)
 
 ---------------------------------------------------------------------
--- SPEED SLIDER LOGIC
+-- SPEED SLIDER LOGIC (FLY)
 ---------------------------------------------------------------------
 local function UpdateSpeedSliderFromX(xPos)
     local barAbsPos = SpeedSliderBar.AbsolutePosition.X
@@ -1031,6 +1150,63 @@ end)
 Connect(UserInputService.InputChanged, function(input)
     if Sliding and input.UserInputType == Enum.UserInputType.MouseMovement then
         UpdateSpeedSliderFromX(input.Position.X)
+    end
+end)
+
+---------------------------------------------------------------------
+-- WALKSPEED SLIDER LOGIC
+---------------------------------------------------------------------
+local function UpdateWalkSpeedSliderFromX(xPos)
+    local barAbsPos = WalkSpeedSliderBar.AbsolutePosition.X
+    local barWidth = WalkSpeedSliderBar.AbsoluteSize.X
+
+    local t = math.clamp((xPos - barAbsPos) / barWidth, 0, 1)
+    local newSpeed = math.floor(Lerp(Config.MinWalkSpeed, Config.MaxWalkSpeed, t))
+    State.WalkSpeed = newSpeed
+
+    WalkSpeedSliderFill.Size = UDim2.new(t, 0, 1, 0)
+    WalkSpeedSliderDrag.Position = UDim2.new(
+        t,
+        -WalkSpeedSliderDrag.Size.X.Offset/2,
+        -0.5,
+        WalkSpeedSliderBar.Size.Y.Offset/2
+    )
+    WalkSpeedValueLabel.Text = tostring(newSpeed)
+    ApplyWalkSpeed()
+    SaveSettings()
+end
+
+do
+    local t = (State.WalkSpeed - Config.MinWalkSpeed) / (Config.MaxWalkSpeed - Config.MinWalkSpeed)
+    t = math.clamp(t, 0, 1)
+    WalkSpeedSliderFill.Size = UDim2.new(t, 0, 1, 0)
+    WalkSpeedSliderDrag.Position = UDim2.new(
+        t,
+        -WalkSpeedSliderDrag.Size.X.Offset/2,
+        -0.5,
+        WalkSpeedSliderBar.Size.Y.Offset/2
+    )
+    WalkSpeedValueLabel.Text = tostring(State.WalkSpeed)
+    ApplyWalkSpeed()
+end
+
+Connect(WalkSpeedSliderBar.InputBegan, function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        SlidingWalk = true
+        UpdateWalkSpeedSliderFromX(input.Position.X)
+        PlaySound("Click")
+    end
+end)
+
+Connect(WalkSpeedSliderBar.InputEnded, function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        SlidingWalk = false
+    end
+end)
+
+Connect(UserInputService.InputChanged, function(input)
+    if SlidingWalk and input.UserInputType == Enum.UserInputType.MouseMovement then
+        UpdateWalkSpeedSliderFromX(input.Position.X)
     end
 end)
 
@@ -1132,6 +1308,15 @@ Connect(RunService.RenderStepped, function()
 end)
 
 ---------------------------------------------------------------------
+-- GODMODE LOOP (HP INFINITO)
+---------------------------------------------------------------------
+Connect(RunService.Heartbeat, function()
+    if GodmodeEnabled and Humanoid then
+        Humanoid.Health = Humanoid.MaxHealth
+    end
+end)
+
+---------------------------------------------------------------------
 -- UNLOAD
 ---------------------------------------------------------------------
 Connect(UnloadButton.MouseButton1Click, function()
@@ -1165,3 +1350,4 @@ end)
 
 ApplyTheme()
 ShowTab("Main")
+ApplyWalkSpeed()
